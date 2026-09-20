@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -91,12 +92,13 @@ class PageEditorDialog(QDialog):
         self.rows_layout = QVBoxLayout(self.rows_container)
         self.rows_layout.setContentsMargins(12, 12, 12, 12)
         self.rows_layout.setSpacing(10)
+        self.rows_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.rows_scroll = QScrollArea()
         self.rows_scroll.setWidgetResizable(True)
         self.rows_scroll.setFrameShape(self.rows_scroll.Shape.NoFrame)
         self.rows_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        self.rows_scroll.setMinimumHeight(180)
+        self.rows_scroll.setFixedHeight(220)
         self.rows_scroll.setWidget(self.rows_container)
 
         self.done_button = QPushButton("Done")
@@ -141,6 +143,7 @@ class PageEditorDialog(QDialog):
         remove_button.setObjectName("dangerButton")
 
         row_widget = QWidget()
+        row_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         row_layout = QHBoxLayout(row_widget)
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(8)
@@ -182,8 +185,6 @@ class PageEditorDialog(QDialog):
         for _, selector_field, text_field, _, _, _ in self.entry_rows:
             selector = selector_field.text().strip()
             text = text_field.text().strip()
-            if not selector:
-                continue
             entries.append(PageEntry(selector=selector, text=text))
         self.page.entries = entries
 
@@ -253,6 +254,7 @@ class PageEditorDialog(QDialog):
             self.name_input.setFocus()
             return
         self._sync_row_data()
+        self.page.entries = [entry for entry in self.page.entries if entry.selector]
         self._auto_save()
         self.accept()
 
@@ -260,6 +262,7 @@ class PageEditorDialog(QDialog):
 class PageCard(QWidget):
     def __init__(self, page: PageDefinition, on_edit, on_delete, on_fill) -> None:
         super().__init__()
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.page = page
         self.on_edit = on_edit
         self.on_delete = on_delete
@@ -361,6 +364,7 @@ class MainWindow(QWidget):
         self.cards_layout = QVBoxLayout(self.cards_container)
         self.cards_layout.setContentsMargins(8, 8, 8, 8)
         self.cards_layout.setSpacing(16)
+        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -459,7 +463,8 @@ class MainWindow(QWidget):
         browser = self._ensure_browser()
         try:
             url = self.url_input.text().strip()
-            current_url = getattr(browser.driver, "current_url", "")
+            driver = getattr(browser, "driver", None)
+            current_url = getattr(driver, "current_url", getattr(browser, "current_url", ""))
             if not current_url or current_url in {"about:blank", "data:,"}:
                 if url:
                     browser.open_url(url)
