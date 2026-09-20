@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from receipt_autofill.app import MainWindow, PageEditorDialog
+from receipt_autofill.browser_helper import BrowserController
 from receipt_autofill.models import PageDefinition, PageEntry
 from receipt_autofill.storage import AppDataStore
 
@@ -123,12 +124,16 @@ def test_browser_controller_prefers_edge_when_available(monkeypatch):
         def __init__(self):
             self.binary_location = None
 
+        def add_argument(self, argument):
+            pass
+
     class FakeDriver:
         def __init__(self, **kwargs):
             calls["kwargs"] = kwargs
 
     monkeypatch.setattr("receipt_autofill.browser_helper.os.path.exists", fake_exists)
     monkeypatch.setattr("receipt_autofill.browser_helper.EdgeOptions", FakeEdgeOptions)
+    monkeypatch.setattr("receipt_autofill.browser_helper.EdgeChromiumDriverManager.install", lambda self: "msedgedriver")
     monkeypatch.setattr("receipt_autofill.browser_helper.webdriver.Edge", FakeDriver)
     monkeypatch.setattr("receipt_autofill.browser_helper.webdriver.Chrome", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Chrome should not be used when Edge is installed")))
 
@@ -206,11 +211,13 @@ def test_page_editor_move_row_reorders_entries():
 
 def test_page_editor_skips_blank_selector_rows():
     dialog = PageEditorDialog()
+    dialog.name_input.setText("Invoice")
     dialog.add_row("#username", "evaldo")
     dialog.add_row("", "ignored")
     dialog.add_row("#password", "pass")
     dialog.add_row("   ", "ignored")
 
+    dialog.validate_and_accept()
     selectors = [entry.selector for entry in dialog.page.entries]
     assert selectors == ["#username", "#password"]
 
@@ -234,7 +241,7 @@ def test_fill_page_reports_missing_selectors(monkeypatch):
     fake_browser = FakeBrowser()
     monkeypatch.setattr(main_window, "_ensure_browser", lambda: fake_browser)
 
-    def fake_info(title, text):
+    def fake_info(_parent, title, text):
         info_calls["title"] = title
         info_calls["text"] = text
 
@@ -289,5 +296,6 @@ def test_page_editor_scrolling_is_enabled_for_many_rows():
     for idx in range(20):
         dialog.add_row(f"#field{idx}", str(idx))
 
+    assert dialog.rows_layout.alignment() == Qt.AlignmentFlag.AlignTop
     assert dialog.rows_scroll.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOn
     assert dialog.rows_scroll.minimumHeight() >= 180
