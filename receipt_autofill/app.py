@@ -182,6 +182,8 @@ class PageEditorDialog(QDialog):
         for _, selector_field, text_field, _, _, _ in self.entry_rows:
             selector = selector_field.text().strip()
             text = text_field.text().strip()
+            if not selector:
+                continue
             entries.append(PageEntry(selector=selector, text=text))
         self.page.entries = entries
 
@@ -250,6 +252,7 @@ class PageEditorDialog(QDialog):
             self.page_name_error.setText("Page name is required.")
             self.name_input.setFocus()
             return
+        self._sync_row_data()
         self._auto_save()
         self.accept()
 
@@ -447,21 +450,32 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "URL required", "Paste the page URL into the main field before filling data.")
             return
 
-        if not page.entries:
-            QMessageBox.information(self, "No entries", "This page has no entries to fill.")
+        valid_entries = [entry for entry in page.entries if entry.selector and entry.selector.strip()]
+        if not valid_entries:
+            QMessageBox.information(self, "No entries", "This page has no valid selectors to fill.")
             return
 
         self._save_last_url()
         browser = self._ensure_browser()
         try:
             url = self.url_input.text().strip()
-            browser.open_url(url)
+            current_url = getattr(browser.driver, "current_url", "")
+            if not current_url or current_url in {"about:blank", "data:,"}:
+                if url:
+                    browser.open_url(url)
+
             filled_count = 0
-            for entry in page.entries:
-                if entry.selector and entry.text:
-                    if browser.fill_value(entry.selector, entry.text):
-                        filled_count += 1
-            QMessageBox.information(self, "Filled", f"Filled {filled_count} field(s) on the active browser page.")
+            missing_selectors: list[str] = []
+            for entry in valid_entries:
+                if browser.fill_value(entry.selector, entry.text):
+                    filled_count += 1
+                else:
+                    missing_selectors.append(entry.selector)
+
+            message = f"Filled {filled_count} field(s) on the active browser page."
+            if missing_selectors:
+                message += "\nMissing selectors: " + ", ".join(missing_selectors)
+            QMessageBox.information(self, "Filled", message)
         except Exception as exc:  # pragma: no cover - UI warning path
             QMessageBox.critical(self, "Fill failed", f"Could not fill values: {exc}")
 

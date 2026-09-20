@@ -204,6 +204,86 @@ def test_page_editor_move_row_reorders_entries():
     assert [entry.text for entry in dialog.page.entries] == ["B", "A"]
 
 
+def test_page_editor_skips_blank_selector_rows():
+    dialog = PageEditorDialog()
+    dialog.add_row("#username", "evaldo")
+    dialog.add_row("", "ignored")
+    dialog.add_row("#password", "pass")
+    dialog.add_row("   ", "ignored")
+
+    selectors = [entry.selector for entry in dialog.page.entries]
+    assert selectors == ["#username", "#password"]
+
+
+def test_fill_page_reports_missing_selectors(monkeypatch):
+    main_window = MainWindow()
+    info_calls = {}
+
+    class FakeBrowser:
+        def __init__(self):
+            self.opened = []
+            self.current_url = "about:blank"
+
+        def open_url(self, url):
+            self.current_url = url
+            self.opened.append(url)
+
+        def fill_value(self, selector, text):
+            return selector == "#username"
+
+    fake_browser = FakeBrowser()
+    monkeypatch.setattr(main_window, "_ensure_browser", lambda: fake_browser)
+
+    def fake_info(title, text):
+        info_calls["title"] = title
+        info_calls["text"] = text
+
+    monkeypatch.setattr("receipt_autofill.app.QMessageBox.information", fake_info)
+    main_window.url_input.setText("https://example.com/invoice")
+    page = PageDefinition(
+        name="Invoice",
+        entries=[
+            PageEntry(selector="#username", text="evaldo"),
+            PageEntry(selector="#amount", text="42"),
+            PageEntry(selector="", text="ignored"),
+        ],
+    )
+
+    main_window.fill_page(page)
+
+    assert info_calls["title"] == "Filled"
+    assert "Filled 1 field(s)" in info_calls["text"]
+    assert "Missing selectors:" in info_calls["text"]
+    assert "#amount" in info_calls["text"]
+
+
+def test_fill_page_does_not_reload_when_browser_already_on_a_page(monkeypatch):
+    main_window = MainWindow()
+
+    class FakeBrowser:
+        def __init__(self):
+            self.current_url = "https://fill.dev/login"
+            self.opened = []
+
+        def open_url(self, url):
+            self.current_url = url
+            self.opened.append(url)
+
+        def fill_value(self, selector, text):
+            return True
+
+    fake_browser = FakeBrowser()
+    monkeypatch.setattr(main_window, "_ensure_browser", lambda: fake_browser)
+    monkeypatch.setattr("receipt_autofill.app.QMessageBox.information", lambda *args, **kwargs: None)
+    main_window.url_input.setText("https://fill.dev/")
+    page = PageDefinition(name="Login", entries=[PageEntry(selector="#password", text="secret")])
+
+    main_window.fill_page(page)
+
+    assert fake_browser.opened == []
+    assert fake_browser.current_url == "https://fill.dev/login"
+
+
 def test_page_editor_scrolling_is_enabled_for_many_rows():
     dialog = PageEditorDialog()
     for idx in range(20):
